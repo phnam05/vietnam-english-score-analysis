@@ -1,5 +1,8 @@
 # Vietnam National Exam — English Score & Socioeconomic Analysis
 
+## View it in one click
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://phnam05-english-score-analysis.streamlit.app/)
+
 ## Overview
 This project explores how socioeconomic conditions affect English language 
 performance across Vietnam's 63 provinces, using data from the 2024 national 
@@ -25,9 +28,6 @@ to uncover structural disparities in English education nationwide.
 - Linear regression & correlation analysis
 
 ## Visualizations
-## View it in one click
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://phnam05-english-score-analysis.streamlit.app/)
-
 View the full visual report here: https://canva.link/0wav7jz9wez7anm
 
 ## Try it on your machine
