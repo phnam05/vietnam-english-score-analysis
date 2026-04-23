@@ -20,9 +20,38 @@ to uncover structural disparities in English education nationwide.
 - Multidimensional poverty rate by province (GSO 2023)
 
 ## Tools & Methods
-- **Python** — Pandas, NumPy, Matplotlib, Seaborn
+- **Python** — Pandas, NumPy, Matplotlib, Seaborn, Streamlit for hosting the dashboard
 - Exploratory Data Analysis (EDA)
 - Linear regression & correlation analysis
 
 ## Visualizations
+## View it in one click
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://phnam05-english-score-analysis.streamlit.app/)
 View the full visual report here: https://canva.link/0wav7jz9wez7anm
+
+## Try it on your machine
+### 1. Clone the repository
+```bash
+git clone https://github.com/phnam05/vietnam-english-score-analysis.git
+cd vietnam-english-score-analysis
+```
+
+### 2. Start a virtual environment and get the dependencies
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+### 3. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Run the Streamlit app
+```bash
+streamlit run english-app.py
+```
+
+
+
+
