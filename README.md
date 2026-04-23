@@ -27,6 +27,7 @@ to uncover structural disparities in English education nationwide.
 ## Visualizations
 ## View it in one click
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://phnam05-english-score-analysis.streamlit.app/)
+
 View the full visual report here: https://canva.link/0wav7jz9wez7anm
 
 ## Try it on your machine
