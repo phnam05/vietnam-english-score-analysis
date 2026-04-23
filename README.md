@@ -1,6 +1,6 @@
 # Vietnam National Exam — English Score & Socioeconomic Analysis
 
-## View it in one click
+## View it in one click with Streamlit
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://phnam05-english-score-analysis.streamlit.app/)
 
 ## Overview
