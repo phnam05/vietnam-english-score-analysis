@@ -3,8 +3,18 @@ import altair as alt
 import pandas as pd
 import numpy as np
 import os
+import json
+import unicodedata
 import warnings
+
 warnings.filterwarnings('ignore')
+
+try:
+    import google.generativeai as genai
+
+    GEMINI_AVAILABLE = True
+except ImportError:
+    GEMINI_AVAILABLE = False
 
 # ── Page config ───────────────────────────────────────────────
 st.set_page_config(
@@ -108,11 +118,13 @@ div[data-baseweb="tab-list"] {
 
 PALETTE = ['#5b6ef5', '#0ea5e9', '#10b981', '#f97316', '#ef4444', '#8b5cf6', '#ec4899']
 C_GREEN = '#10b981'
-C_RED   = '#ef4444'
-C_BLUE  = '#5b6ef5'
+C_RED = '#ef4444'
+C_BLUE = '#5b6ef5'
+
 
 def insight(text):
     st.markdown(f'<div class="insight-box">💡 {text}</div>', unsafe_allow_html=True)
+
 
 def stat_card(label, value, description):
     st.markdown(
@@ -124,57 +136,59 @@ def stat_card(label, value, description):
         unsafe_allow_html=True
     )
 
+
 def ols(X_series, y_series):
     X = X_series.values.astype(float)
     y = y_series.values.astype(float)
     mask = ~(np.isnan(X) | np.isnan(y))
     X, y = X[mask], y[mask]
     mean_X, mean_y = X.mean(), y.mean()
-    slope     = ((X - mean_X) * (y - mean_y)).sum() / ((X - mean_X) ** 2).sum()
+    slope = ((X - mean_X) * (y - mean_y)).sum() / ((X - mean_X) ** 2).sum()
     intercept = mean_y - slope * mean_X
-    corr      = np.corrcoef(X, y)[0, 1]
+    corr = np.corrcoef(X, y)[0, 1]
     return slope, intercept, corr, X, y
 
 
 # ── Province / region maps ────────────────────────────────────
 PROVINCES = {
-    "01":"Hà Nội","02":"TP. Hồ Chí Minh","03":"Hải Phòng","04":"Đà Nẵng",
-    "05":"Hà Giang","06":"Cao Bằng","07":"Lai Châu","08":"Lào Cai",
-    "09":"Tuyên Quang","10":"Lạng Sơn","11":"Bắc Kạn","12":"Thái Nguyên",
-    "13":"Yên Bái","14":"Sơn La","15":"Phú Thọ","16":"Vĩnh Phúc",
-    "17":"Quảng Ninh","18":"Bắc Giang","19":"Bắc Ninh","21":"Hải Dương",
-    "22":"Hưng Yên","23":"Hòa Bình","24":"Hà Nam","25":"Nam Định",
-    "26":"Thái Bình","27":"Ninh Bình","28":"Thanh Hóa","29":"Nghệ An",
-    "30":"Hà Tĩnh","31":"Quảng Bình","32":"Quảng Trị","33":"Thừa Thiên-Huế",
-    "34":"Quảng Nam","35":"Quảng Ngãi","36":"Kon Tum","37":"Bình Định",
-    "38":"Gia Lai","39":"Phú Yên","40":"Đắk Lắk","41":"Khánh Hòa",
-    "42":"Lâm Đồng","43":"Bình Phước","44":"Bình Dương","45":"Ninh Thuận",
-    "46":"Tây Ninh","47":"Bình Thuận","48":"Đồng Nai","49":"Long An",
-    "50":"Đồng Tháp","51":"An Giang","52":"Bà Rịa - Vũng Tàu",
-    "53":"Tiền Giang","54":"Kiên Giang","55":"Cần Thơ","56":"Bến Tre",
-    "57":"Vĩnh Long","58":"Trà Vinh","59":"Sóc Trăng","60":"Bạc Liêu",
-    "61":"Cà Mau","62":"Điện Biên","63":"Đắk Nông","64":"Hậu Giang",
+    "01": "Hà Nội", "02": "TP. Hồ Chí Minh", "03": "Hải Phòng", "04": "Đà Nẵng",
+    "05": "Hà Giang", "06": "Cao Bằng", "07": "Lai Châu", "08": "Lào Cai",
+    "09": "Tuyên Quang", "10": "Lạng Sơn", "11": "Bắc Kạn", "12": "Thái Nguyên",
+    "13": "Yên Bái", "14": "Sơn La", "15": "Phú Thọ", "16": "Vĩnh Phúc",
+    "17": "Quảng Ninh", "18": "Bắc Giang", "19": "Bắc Ninh", "21": "Hải Dương",
+    "22": "Hưng Yên", "23": "Hòa Bình", "24": "Hà Nam", "25": "Nam Định",
+    "26": "Thái Bình", "27": "Ninh Bình", "28": "Thanh Hóa", "29": "Nghệ An",
+    "30": "Hà Tĩnh", "31": "Quảng Bình", "32": "Quảng Trị", "33": "Thừa Thiên-Huế",
+    "34": "Quảng Nam", "35": "Quảng Ngãi", "36": "Kon Tum", "37": "Bình Định",
+    "38": "Gia Lai", "39": "Phú Yên", "40": "Đắk Lắk", "41": "Khánh Hòa",
+    "42": "Lâm Đồng", "43": "Bình Phước", "44": "Bình Dương", "45": "Ninh Thuận",
+    "46": "Tây Ninh", "47": "Bình Thuận", "48": "Đồng Nai", "49": "Long An",
+    "50": "Đồng Tháp", "51": "An Giang", "52": "Bà Rịa - Vũng Tàu",
+    "53": "Tiền Giang", "54": "Kiên Giang", "55": "Cần Thơ", "56": "Bến Tre",
+    "57": "Vĩnh Long", "58": "Trà Vinh", "59": "Sóc Trăng", "60": "Bạc Liêu",
+    "61": "Cà Mau", "62": "Điện Biên", "63": "Đắk Nông", "64": "Hậu Giang",
 }
 
 REGIONS = {
     "North": [
-        "Hà Nội","Vĩnh Phúc","Bắc Ninh","Quảng Ninh","Hải Dương","Hải Phòng",
-        "Hưng Yên","Thái Bình","Hà Nam","Nam Định","Ninh Bình","Hà Giang",
-        "Cao Bằng","Bắc Kạn","Tuyên Quang","Lào Cai","Yên Bái","Thái Nguyên",
-        "Lạng Sơn","Bắc Giang","Phú Thọ","Điện Biên","Lai Châu","Sơn La","Hòa Bình",
+        "Hà Nội", "Vĩnh Phúc", "Bắc Ninh", "Quảng Ninh", "Hải Dương", "Hải Phòng",
+        "Hưng Yên", "Thái Bình", "Hà Nam", "Nam Định", "Ninh Bình", "Hà Giang",
+        "Cao Bằng", "Bắc Kạn", "Tuyên Quang", "Lào Cai", "Yên Bái", "Thái Nguyên",
+        "Lạng Sơn", "Bắc Giang", "Phú Thọ", "Điện Biên", "Lai Châu", "Sơn La", "Hòa Bình",
     ],
     "Central": [
-        "Thanh Hóa","Nghệ An","Hà Tĩnh","Quảng Bình","Quảng Trị","Thừa Thiên-Huế",
-        "Đà Nẵng","Quảng Nam","Quảng Ngãi","Bình Định","Phú Yên","Khánh Hòa",
-        "Ninh Thuận","Bình Thuận","Kon Tum","Gia Lai","Đắk Lắk","Đắk Nông","Lâm Đồng",
+        "Thanh Hóa", "Nghệ An", "Hà Tĩnh", "Quảng Bình", "Quảng Trị", "Thừa Thiên-Huế",
+        "Đà Nẵng", "Quảng Nam", "Quảng Ngãi", "Bình Định", "Phú Yên", "Khánh Hòa",
+        "Ninh Thuận", "Bình Thuận", "Kon Tum", "Gia Lai", "Đắk Lắk", "Đắk Nông", "Lâm Đồng",
     ],
     "South": [
-        "Bình Phước","Tây Ninh","Bình Dương","Đồng Nai","Bà Rịa - Vũng Tàu",
-        "TP. Hồ Chí Minh","Long An","Tiền Giang","Bến Tre","Trà Vinh","Vĩnh Long",
-        "Đồng Tháp","An Giang","Kiên Giang","Cần Thơ","Hậu Giang","Sóc Trăng",
-        "Bạc Liêu","Cà Mau",
+        "Bình Phước", "Tây Ninh", "Bình Dương", "Đồng Nai", "Bà Rịa - Vũng Tàu",
+        "TP. Hồ Chí Minh", "Long An", "Tiền Giang", "Bến Tre", "Trà Vinh", "Vĩnh Long",
+        "Đồng Tháp", "An Giang", "Kiên Giang", "Cần Thơ", "Hậu Giang", "Sóc Trăng",
+        "Bạc Liêu", "Cà Mau",
     ],
 }
+
 
 def get_region(province):
     for region, provs in REGIONS.items():
@@ -186,6 +200,7 @@ def get_region(province):
 # ── Load data ─────────────────────────────────────────────────
 GITHUB_RAW = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/data"
 
+
 @st.cache_data
 def load_data():
     def resolve(filename):
@@ -196,36 +211,35 @@ def load_data():
 
     scores = pd.read_csv(resolve("diem_thi_thpt_2024.csv"), dtype={'sbd': str})
     scores['hometown'] = scores['sbd'].str[:2].map(PROVINCES)
-    scores['region']   = scores['hometown'].apply(get_region)
+    scores['region'] = scores['hometown'].apply(get_region)
     eng = scores[scores['ma_ngoai_ngu'] == 'N1'].copy()
 
-    computer = pd.read_excel(resolve("computer23.xlsx"), skiprows=2, names=['Province','computer_pct'])
-    poverty  = pd.read_excel(resolve("poverty23.xlsx"),  skiprows=2, names=['Province','poverty_pct'])
-    gdp      = pd.read_excel(resolve("gdp23.xlsx"), skiprows=3,
-                             names=['Province','avg_income','group1','group2','group3','group4','group5'])
+    computer = pd.read_excel(resolve("computer23.xlsx"), skiprows=2, names=['Province', 'computer_pct'])
+    poverty = pd.read_excel(resolve("poverty23.xlsx"), skiprows=2, names=['Province', 'poverty_pct'])
+    gdp = pd.read_excel(resolve("gdp23.xlsx"), skiprows=3,
+                        names=['Province', 'avg_income', 'group1', 'group2', 'group3', 'group4', 'group5'])
 
     socio = computer.merge(poverty, on='Province', how='left') \
-                    .merge(gdp[['Province','avg_income']], on='Province', how='left')
+        .merge(gdp[['Province', 'avg_income']], on='Province', how='left')
 
     eng_avg = eng.groupby('hometown', as_index=False)['ngoai_ngu'].mean()
     eng_avg.columns = ['Province', 'avg_score']
 
     merged = socio.merge(eng_avg, on='Province', how='inner')
-    merged = merged.dropna(subset=['avg_score','computer_pct','poverty_pct','avg_income'])
+    merged = merged.dropna(subset=['avg_score', 'computer_pct', 'poverty_pct', 'avg_income'])
 
     return eng, eng_avg, merged
 
+
 eng, eng_avg, merged = load_data()
 
-
 # ── KPIs ─────────────────────────────────────────────────────
-n_students   = len(eng)
-mean_score   = eng['ngoai_ngu'].mean()
+n_students = len(eng)
+mean_score = eng['ngoai_ngu'].mean()
 median_score = eng['ngoai_ngu'].median()
-pass_rate    = round(100 * (eng['ngoai_ngu'] >= 5).sum() / n_students, 1)
+pass_rate = round(100 * (eng['ngoai_ngu'] >= 5).sum() / n_students, 1)
 top_province = eng_avg.sort_values('avg_score', ascending=False).iloc[0]
 bot_province = eng_avg.sort_values('avg_score').iloc[0]
-
 
 # ═══════════════════════════════════════════════════════════════
 # HEADER
@@ -235,31 +249,31 @@ with st.container(horizontal_alignment="center"):
     st.markdown("""
     This study presents a comprehensive analysis of the 2024 ***Vietnamese National High School Exam English*** scores across all 63 provinces, 
     with the aim of uncovering regional disparities in academic performance and examining how these differences may be associated with underlying socioeconomic conditions. 
-    
+
     The score dataset, courtesy of J2Team, provides province-level insights into student outcomes, enabling a nationwide comparative perspective. 
     The analysis incorporates socioeconomic data from 2023 published by  ***Tổng cục Thống kê (General Statistics Office of Vietnam)***. 
     The selected indicators include computer access rate (%), poverty rate (%), and GDP per capita (VND), which together serve as proxies for technological accessibility, economic well-being, and overall development.
-    
+
     By exploring the relationships between these variables and English exam performance, this study seeks to identify meaningful correlations and highlight potential structural inequalities that may influence educational outcomes across different regions of Vietnam."""
-    )
+                )
 
 st.space()
 
 k1, k2, k3, k4, k5 = st.columns(5)
-k1.metric("Students (English)",  f"{n_students:,}")
+k1.metric("Students (English)", f"{n_students:,}")
 k2.metric("National Mean Score", f"{mean_score:.2f} / 10")
-k3.metric("Median Score",        f"{median_score:.1f} / 10")
-k4.metric("Pass Rate (≥ 5)",     f"{pass_rate}%")
-k5.metric("Score Range",         f"{eng['ngoai_ngu'].min():.1f} – {eng['ngoai_ngu'].max():.1f}")
+k3.metric("Median Score", f"{median_score:.1f} / 10")
+k4.metric("Pass Rate (≥ 5)", f"{pass_rate}%")
+k5.metric("Score Range", f"{eng['ngoai_ngu'].min():.1f} – {eng['ngoai_ngu'].max():.1f}")
 
 st.space("large")
 
-
-tab_dist, tab_prov, tab_region, tab_reg = st.tabs([
+tab_dist, tab_prov, tab_region, tab_reg, tab_agent = st.tabs([
     "📊 Score Distribution",
     "🗺️ By Province",
     "🧭 By Region",
-    "📈 Socioeconomic Factors"
+    "📈 Socioeconomic Factors",
+    "🤖 AI Agent"
 ])
 
 # ═══════════════════════════════════════════════════════════════
@@ -294,7 +308,7 @@ with tab_dist:
         )
         mean_rule = (
             alt.Chart(pd.DataFrame({'mean': [mean_score]}))
-            .mark_rule(color=C_RED, strokeDash=[6,3], strokeWidth=2.5)
+            .mark_rule(color=C_RED, strokeDash=[6, 3], strokeWidth=2.5)
             .encode(x="mean:Q", tooltip=[alt.Tooltip("mean:Q", title="National Mean", format=".2f")])
         )
         st.altair_chart(hist + mean_rule, use_container_width=True)
@@ -311,9 +325,9 @@ with tab_dist:
     with cols[1]:
         st.subheader("Score bracket breakdown")
         brackets = pd.DataFrame({
-            'Bracket': ['Excellent (8–10)','Good (6.5–8)','Average (5–6.5)','Below average (<5)'],
-            'Min':     [8, 6.5, 5, 0],
-            'Max':     [10.01, 8, 6.5, 5],
+            'Bracket': ['Excellent (8–10)', 'Good (6.5–8)', 'Average (5–6.5)', 'Below average (<5)'],
+            'Min': [8, 6.5, 5, 0],
+            'Max': [10.01, 8, 6.5, 5],
         })
         brackets['Count'] = brackets.apply(
             lambda r: int(((eng['ngoai_ngu'] >= r['Min']) & (eng['ngoai_ngu'] < r['Max'])).sum()), axis=1
@@ -325,12 +339,12 @@ with tab_dist:
             .mark_bar(cornerRadiusTopLeft=4, cornerRadiusTopRight=4)
             .encode(
                 alt.X("Bracket:N",
-                      sort=['Excellent (8–10)','Good (6.5–8)','Average (5–6.5)','Below average (<5)'],
+                      sort=['Excellent (8–10)', 'Good (6.5–8)', 'Average (5–6.5)', 'Below average (<5)'],
                       axis=alt.Axis(labelAngle=-20, labelFontSize=12), title=None),
                 alt.Y("Count:Q", title="Students", axis=alt.Axis(format=",d", labelFontSize=13)),
                 alt.Color("Bracket:N",
                           scale=alt.Scale(
-                              domain=['Excellent (8–10)','Good (6.5–8)','Average (5–6.5)','Below average (<5)'],
+                              domain=['Excellent (8–10)', 'Good (6.5–8)', 'Average (5–6.5)', 'Below average (<5)'],
                               range=[C_GREEN, C_BLUE, '#f97316', C_RED]
                           ), legend=None),
                 tooltip=[alt.Tooltip("Bracket:N"), alt.Tooltip("Count:Q", format=","),
@@ -340,16 +354,13 @@ with tab_dist:
         )
         st.altair_chart(bracket_chart, use_container_width=True)
         st.dataframe(
-            brackets[['Bracket','Count','%']].rename(columns={'%':'% of Students'}),
+            brackets[['Bracket', 'Count', '%']].rename(columns={'%': '% of Students'}),
             hide_index=True, use_container_width=True,
             column_config={
-                'Count':         st.column_config.NumberColumn(format="localized"),
+                'Count': st.column_config.NumberColumn(format="localized"),
                 '% of Students': st.column_config.ProgressColumn(min_value=0, max_value=100, format="%.1f%%"),
             }
         )
-
-
-
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 2 — BY PROVINCE
@@ -388,7 +399,7 @@ with tab_prov:
     )
     threshold_rule = (
         alt.Chart(pd.DataFrame({'y': [score_thresh]}))
-        .mark_rule(color='#64748b', strokeDash=[5,3], strokeWidth=1.5)
+        .mark_rule(color='#64748b', strokeDash=[5, 3], strokeWidth=1.5)
         .encode(y="y:Q")
     )
     st.altair_chart(bar_chart + threshold_rule, use_container_width=True)
@@ -400,10 +411,10 @@ with tab_prov:
         f"<strong>{bot_province['avg_score']:.2f}</strong> — a gap of "
         f"<strong>{top_province['avg_score'] - bot_province['avg_score']:.2f} points</strong>."
         f"It's also worth noting that high-performing provinces are predominantly <strong>major metropolitan areas</strong> "
-    f"such as <strong>HCMC</strong>, <strong>Bình Dương</strong>, <strong>Hà Nội</strong>, and "
-    f"<strong>Đà Nẵng</strong>, whereas lower scores are concentrated in "
-    f"<strong>northern mountainous regions</strong>, where <strong>access to quality English education</strong> "
-    f"remains more limited."
+        f"such as <strong>HCMC</strong>, <strong>Bình Dương</strong>, <strong>Hà Nội</strong>, and "
+        f"<strong>Đà Nẵng</strong>, whereas lower scores are concentrated in "
+        f"<strong>northern mountainous regions</strong>, where <strong>access to quality English education</strong> "
+        f"remains more limited."
     )
 
     st.subheader("Pass / Fail Rate by Province")
@@ -448,20 +459,19 @@ with tab_prov:
     with cols[0]:
         st.subheader("Top 10 provinces", help="Ranked by average English score")
         st.dataframe(
-            eng_avg_sorted.head(10)[['rank','Province','avg_score']].rename(
-                columns={'rank':'Rank','avg_score':'Avg Score'}),
+            eng_avg_sorted.head(10)[['rank', 'Province', 'avg_score']].rename(
+                columns={'rank': 'Rank', 'avg_score': 'Avg Score'}),
             hide_index=True, use_container_width=True,
             column_config={'Avg Score': st.column_config.ProgressColumn(min_value=0, max_value=10, format="%.2f")}
         )
     with cols[1]:
         st.subheader("Bottom 10 provinces", help="Ranked by average English score")
         st.dataframe(
-            eng_avg_sorted.tail(10)[['rank','Province','avg_score']].rename(
-                columns={'rank':'Rank','avg_score':'Avg Score'}),
+            eng_avg_sorted.tail(10)[['rank', 'Province', 'avg_score']].rename(
+                columns={'rank': 'Rank', 'avg_score': 'Avg Score'}),
             hide_index=True, use_container_width=True,
             column_config={'Avg Score': st.column_config.ProgressColumn(min_value=0, max_value=10, format="%.2f")}
         )
-
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 3 — BY REGION
@@ -473,7 +483,7 @@ with tab_region:
     region_stats = eng.groupby('region')['ngoai_ngu'].agg(
         mean='mean', median='median', std='std', count='count'
     ).round(3).reset_index().dropna()
-    region_stats.columns = ['Region','Mean','Median','Std Dev','Students']
+    region_stats.columns = ['Region', 'Mean', 'Median', 'Std Dev', 'Students']
 
     r_cols = st.columns(3)
     for i, row in region_stats.iterrows():
@@ -495,7 +505,7 @@ with tab_region:
                       scale=alt.Scale(domain=[0, 8]),
                       axis=alt.Axis(labelFontSize=13)),
                 alt.Color("Region:N",
-                          scale=alt.Scale(domain=['North','Central','South'],
+                          scale=alt.Scale(domain=['North', 'Central', 'South'],
                                           range=[C_BLUE, '#f97316', C_GREEN]), legend=None),
                 tooltip=[alt.Tooltip("Region:N"), alt.Tooltip("Mean:Q", format=".2f"),
                          alt.Tooltip("Students:Q", format=",")]
@@ -507,7 +517,7 @@ with tab_region:
         )
         nat_rule = (
             alt.Chart(pd.DataFrame({'y': [mean_score]}))
-            .mark_rule(color='#64748b', strokeDash=[5,3], strokeWidth=1.5)
+            .mark_rule(color='#64748b', strokeDash=[5, 3], strokeWidth=1.5)
             .encode(y="y:Q", tooltip=[alt.Tooltip("y:Q", title="National mean", format=".2f")])
         )
         st.altair_chart(region_bar + labels + nat_rule, use_container_width=True)
@@ -559,10 +569,10 @@ with tab_region:
         "Scores are normalised within each region so regions of different sizes are comparable."
     )
 
-    eng_region_scores = eng.dropna(subset=['region','ngoai_ngu'])[['region','ngoai_ngu']].copy()
+    eng_region_scores = eng.dropna(subset=['region', 'ngoai_ngu'])[['region', 'ngoai_ngu']].copy()
     region_score_counts = (
         eng_region_scores
-        .groupby(['region','ngoai_ngu']).size().reset_index(name='count')
+        .groupby(['region', 'ngoai_ngu']).size().reset_index(name='count')
     )
     region_totals = region_score_counts.groupby('region')['count'].transform('sum')
     region_score_counts['pct'] = region_score_counts['count'] / region_totals * 100
@@ -577,7 +587,7 @@ with tab_region:
             alt.Y("pct:Q", title="% of Students in Region",
                   axis=alt.Axis(labelFontSize=13, format=".1f")),
             alt.Color("region:N", title="Region",
-                      scale=alt.Scale(domain=['North','Central','South'],
+                      scale=alt.Scale(domain=['North', 'Central', 'South'],
                                       range=[C_BLUE, '#f97316', C_GREEN])),
             tooltip=[alt.Tooltip("region:N", title="Region"),
                      alt.Tooltip("ngoai_ngu:Q", title="Score", format=".2f"),
@@ -588,19 +598,19 @@ with tab_region:
     )
     mean_rule_region = (
         alt.Chart(pd.DataFrame({'mean': [mean_score]}))
-        .mark_rule(color=C_RED, strokeDash=[6,3], strokeWidth=2)
+        .mark_rule(color=C_RED, strokeDash=[6, 3], strokeWidth=2)
         .encode(x="mean:Q", tooltip=[alt.Tooltip("mean:Q", title="National Mean", format=".2f")])
     )
     st.altair_chart(region_hist + mean_rule_region, use_container_width=True)
     st.caption("Red dashed line = national mean.")
-
 
 # ═══════════════════════════════════════════════════════════════
 # TAB 4 — SOCIOECONOMIC REGRESSIONS
 # ═══════════════════════════════════════════════════════════════
 with tab_reg:
     st.subheader("Socioeconomic Factors & English Score")
-    st.caption("Each point is a province. OLS regression shows the linear relationship between each factor and average English score.")
+    st.caption(
+        "Each point is a province. OLS regression shows the linear relationship between each factor and average English score.")
 
     factor = st.segmented_control(
         "Socioeconomic factor",
@@ -609,9 +619,9 @@ with tab_reg:
     )
 
     factor_map = {
-        "Computer Access (%)":   ("computer_pct", "Household Computer Access (%)"),
-        "Poverty Rate (%)":      ("poverty_pct",  "Multidimensional Poverty Rate (%)"),
-        "Avg Income (VND '000)": ("avg_income",   "Average Monthly Income (VND '000)"),
+        "Computer Access (%)": ("computer_pct", "Household Computer Access (%)"),
+        "Poverty Rate (%)": ("poverty_pct", "Multidimensional Poverty Rate (%)"),
+        "Avg Income (VND '000)": ("avg_income", "Average Monthly Income (VND '000)"),
     }
     col_key = factor_map[factor][0] if factor else "computer_pct"
     x_label = factor_map[factor][1] if factor else "Household Computer Access (%)"
@@ -625,15 +635,15 @@ with tab_reg:
     y_pred = slope * X_vals + intercept
     ss_res = ((y_vals - y_pred) ** 2).sum()
     ss_tot = ((y_vals - y_vals.mean()) ** 2).sum()
-    r2     = 1 - ss_res / ss_tot
+    r2 = 1 - ss_res / ss_tot
 
     direction = "positive" if corr > 0 else "negative"
-    strength  = "strong" if abs(corr) > 0.6 else ("moderate" if abs(corr) > 0.4 else "weak")
+    strength = "strong" if abs(corr) > 0.6 else ("moderate" if abs(corr) > 0.4 else "weak")
 
     # Residuals for ALL provinces
     plot_data = plot_data.copy()
     plot_data['predicted'] = y_pred
-    plot_data['residual']  = y_vals - y_pred
+    plot_data['residual'] = y_vals - y_pred
     all_residuals = plot_data.sort_values('residual', ascending=False).copy()
     all_residuals['status'] = all_residuals['residual'].apply(
         lambda r: '▲ Over' if r > 0 else '▼ Under'
@@ -681,8 +691,8 @@ with tab_reg:
             "R² (coefficient of determination)",
             f"{r2:.3f}",
             f"Tells you <strong>how much of the variation</strong> in English scores is explained by {factor}. "
-            f"R² = {r2:.3f} means this single factor accounts for <strong>{r2*100:.1f}% of the differences</strong> "
-            f"in average scores across provinces. The remaining {100-r2*100:.1f}% is explained by other factors."
+            f"R² = {r2:.3f} means this single factor accounts for <strong>{r2 * 100:.1f}% of the differences</strong> "
+            f"in average scores across provinces. The remaining {100 - r2 * 100:.1f}% is explained by other factors."
         )
         stat_card(
             "Slope",
@@ -698,7 +708,7 @@ with tab_reg:
     insight(
         f"There is a <strong>{strength} {direction} correlation (r = {corr:.2f})</strong> between "
         f"<em>{factor}</em> and provincial English scores. "
-        f"The model explains <strong>{r2*100:.1f}%</strong> of the variance across provinces. "
+        f"The model explains <strong>{r2 * 100:.1f}%</strong> of the variance across provinces. "
         + (
             "Provinces with better digital infrastructure score significantly higher."
             if col_key == "computer_pct" else
@@ -715,11 +725,11 @@ with tab_reg:
         "Positive = overperforming given its socioeconomic level. Negative = underperforming."
     )
 
-    display_residuals = all_residuals[['Province','avg_score','predicted','residual','status']].copy()
-    display_residuals.columns = ['Province','Actual Score','Predicted Score','Δ vs Predicted','Status']
-    display_residuals['Actual Score']    = display_residuals['Actual Score'].round(3)
+    display_residuals = all_residuals[['Province', 'avg_score', 'predicted', 'residual', 'status']].copy()
+    display_residuals.columns = ['Province', 'Actual Score', 'Predicted Score', 'Δ vs Predicted', 'Status']
+    display_residuals['Actual Score'] = display_residuals['Actual Score'].round(3)
     display_residuals['Predicted Score'] = display_residuals['Predicted Score'].round(3)
-    display_residuals['Δ vs Predicted']  = display_residuals['Δ vs Predicted'].round(3)
+    display_residuals['Δ vs Predicted'] = display_residuals['Δ vs Predicted'].round(3)
 
     st.dataframe(
         display_residuals,
@@ -727,10 +737,10 @@ with tab_reg:
         use_container_width=True,
         height=400,
         column_config={
-            'Actual Score':    st.column_config.ProgressColumn(min_value=0, max_value=10, format="%.3f"),
+            'Actual Score': st.column_config.ProgressColumn(min_value=0, max_value=10, format="%.3f"),
             'Predicted Score': st.column_config.ProgressColumn(min_value=0, max_value=10, format="%.3f"),
-            'Δ vs Predicted':  st.column_config.NumberColumn(format="+.3f"),
-            'Status':          st.column_config.TextColumn(),
+            'Δ vs Predicted': st.column_config.NumberColumn(format="+.3f"),
+            'Status': st.column_config.TextColumn(),
         }
     )
 
@@ -739,20 +749,20 @@ with tab_reg:
     st.caption("Scatter plots and regression lines for all three socioeconomic predictors, shown side by side.")
 
     factor_configs = [
-        ("computer_pct", "Computer Access (%)",     "Household Computer Access (%)"),
-        ("poverty_pct",  "Poverty Rate (%)",         "Multidimensional Poverty Rate (%)"),
-        ("avg_income",   "Avg Income (VND '000)",    "Average Monthly Income (VND '000)"),
+        ("computer_pct", "Computer Access (%)", "Household Computer Access (%)"),
+        ("poverty_pct", "Poverty Rate (%)", "Multidimensional Poverty Rate (%)"),
+        ("avg_income", "Avg Income (VND '000)", "Average Monthly Income (VND '000)"),
     ]
 
     trio_cols = st.columns(3, border=True)
     for i, (fkey, flabel, fxtitle) in enumerate(factor_configs):
         fdata = merged[['Province', fkey, 'avg_score']].dropna().copy()
         fslope, fintercept, fcorr, fX, fy = ols(fdata[fkey], fdata['avg_score'])
-        fr2   = 1 - ((fy - (fslope*fX + fintercept))**2).sum() / ((fy - fy.mean())**2).sum()
+        fr2 = 1 - ((fy - (fslope * fX + fintercept)) ** 2).sum() / ((fy - fy.mean()) ** 2).sum()
         fline = pd.DataFrame({'x': np.linspace(fX.min(), fX.max(), 80),
                               'y': fslope * np.linspace(fX.min(), fX.max(), 80) + fintercept})
-        fdir  = "positive" if fcorr > 0 else "negative"
-        fstr  = "strong" if abs(fcorr) > 0.6 else ("moderate" if abs(fcorr) > 0.4 else "weak")
+        fdir = "positive" if fcorr > 0 else "negative"
+        fstr = "strong" if abs(fcorr) > 0.6 else ("moderate" if abs(fcorr) > 0.4 else "weak")
 
         with trio_cols[i]:
             st.subheader(flabel)
@@ -779,17 +789,319 @@ with tab_reg:
             )
             st.altair_chart(fscatter + freg, use_container_width=True)
 
-
     insight(
-    f"💡 Across all three factors, the pattern is <strong>highly consistent</strong>: "
-    f"<strong>wealthier, better-connected provinces</strong> achieve higher English scores. "
-    f"<strong>Average income</strong> shows the <strong>strongest relationship</strong> "
-    f"(r = <strong>0.854</strong>, R² = <strong>0.730</strong>), followed by "
-    f"<strong>poverty rate</strong> (r = <strong>-0.758</strong>) and "
-    f"<strong>computer access</strong> (r = <strong>0.692</strong>). "
-    f"With up to <strong>73% of score variation explained</strong>, these results point to a "
-    f"<strong>deep socioeconomic divide</strong> in Vietnam’s education system, "
-    f"where access to resources, technology, and economic opportunity strongly aligns with performance. "
-    f"While these are <strong>correlations rather than causation</strong>, the consistency across indicators "
-    f"suggests structural inequalities play a major role in shaping outcomes."
-)
+        f"💡 Across all three factors, the pattern is <strong>highly consistent</strong>: "
+        f"<strong>wealthier, better-connected provinces</strong> achieve higher English scores. "
+        f"<strong>Average income</strong> shows the <strong>strongest relationship</strong> "
+        f"(r = <strong>0.854</strong>, R² = <strong>0.730</strong>), followed by "
+        f"<strong>poverty rate</strong> (r = <strong>-0.758</strong>) and "
+        f"<strong>computer access</strong> (r = <strong>0.692</strong>). "
+        f"With up to <strong>73% of score variation explained</strong>, these results point to a "
+        f"<strong>deep socioeconomic divide</strong> in Vietnam’s education system, "
+        f"where access to resources, technology, and economic opportunity strongly aligns with performance. "
+        f"While these are <strong>correlations rather than causation</strong>, the consistency across indicators "
+        f"suggests structural inequalities play a major role in shaping outcomes."
+    )
+
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 5 — AI AGENT
+# ═══════════════════════════════════════════════════════════════
+
+# ── Analysis tool functions (used by the agent) ───────────────
+def tool_get_top_provinces(n=5):
+    result = eng_avg.nlargest(n, 'avg_score')[['Province', 'avg_score']].copy()
+    result['avg_score'] = result['avg_score'].round(3)
+    return result.to_string(index=False)
+
+
+def tool_get_bottom_provinces(n=5):
+    result = eng_avg.nsmallest(n, 'avg_score')[['Province', 'avg_score']].copy()
+    result['avg_score'] = result['avg_score'].round(3)
+    return result.to_string(index=False)
+
+
+def tool_correlate(var1, var2):
+    valid_vars = ['avg_score', 'computer_pct', 'poverty_pct', 'avg_income']
+    if var1 not in valid_vars or var2 not in valid_vars:
+        return f"Invalid variables. Choose from: {valid_vars}"
+    corr = merged[[var1, var2]].corr().iloc[0, 1]
+    direction = "positive" if corr > 0 else "negative"
+    strength = "strong" if abs(corr) > 0.6 else ("moderate" if abs(corr) > 0.4 else "weak")
+    return f"Correlation between {var1} and {var2}: r = {corr:.3f} ({strength} {direction} relationship)"
+
+
+def tool_get_region_summary():
+    region_stats = eng.groupby('region')['ngoai_ngu'].agg(
+        mean='mean', median='median', count='count'
+    ).round(3).reset_index().dropna()
+    region_stats = region_stats.sort_values('mean', ascending=False)
+    return region_stats.to_string(index=False)
+
+
+def tool_get_outliers():
+    gdp_median = merged['avg_income'].median()
+    score_median = merged['avg_score'].median()
+    outliers = merged[
+        (merged['avg_income'] > gdp_median) & (merged['avg_score'] < score_median)
+        ][['Province', 'avg_income', 'avg_score', 'poverty_pct']].copy()
+    outliers = outliers.sort_values('avg_score')
+    outliers['avg_score'] = outliers['avg_score'].round(3)
+    if outliers.empty:
+        return "No outlier provinces found with high income but low scores."
+    return outliers.to_string(index=False)
+
+
+def normalize(text):
+    """Strip Vietnamese diacritics for fuzzy province name matching."""
+    text = str(text).lower()
+    text = text.replace('đ', 'd')  # Đ is not a simple diacritic, handle manually
+    return unicodedata.normalize('NFD', text).encode('ascii', 'ignore').decode()
+
+
+def tool_get_province_detail(province_name):
+    needle = normalize(province_name)
+    row = merged[merged['Province'].apply(lambda p: needle in normalize(p))]
+    if row.empty:
+        return f"No province found matching '{province_name}'. Try a partial name like 'Noi', 'Minh', 'Quang'."
+    return row[['Province', 'avg_score', 'computer_pct', 'poverty_pct', 'avg_income']].round(3).to_string(index=False)
+
+
+def tool_compare_provinces(province1, province2):
+    n1, n2 = normalize(province1), normalize(province2)
+    p1 = merged[merged['Province'].apply(lambda p: n1 in normalize(p))]
+    p2 = merged[merged['Province'].apply(lambda p: n2 in normalize(p))]
+    if p1.empty or p2.empty:
+        missing = province1 if p1.empty else province2
+        return f"Province '{missing}' not found. Try a partial name without accents."
+    cols = ['Province', 'avg_score', 'computer_pct', 'poverty_pct', 'avg_income']
+    combined = pd.concat([p1[cols], p2[cols]]).round(3)
+    return combined.to_string(index=False)
+
+
+def tool_get_national_summary():
+    return (
+        f"Total English exam students: {n_students:,}\n"
+        f"National mean score: {mean_score:.3f} / 10\n"
+        f"National median score: {median_score:.1f} / 10\n"
+        f"Pass rate (>=5): {pass_rate}%\n"
+        f"Top province: {top_province['Province']} ({top_province['avg_score']:.3f})\n"
+        f"Bottom province: {bot_province['Province']} ({bot_province['avg_score']:.3f})\n"
+        f"Score gap (top-bottom): {top_province['avg_score'] - bot_province['avg_score']:.3f} points"
+    )
+
+
+TOOLS_MAP = {
+    "get_top_provinces": tool_get_top_provinces,
+    "get_bottom_provinces": tool_get_bottom_provinces,
+    "correlate": tool_correlate,
+    "get_region_summary": tool_get_region_summary,
+    "get_outliers": tool_get_outliers,
+    "get_province_detail": tool_get_province_detail,
+    "get_national_summary": tool_get_national_summary,
+    "compare_provinces": tool_compare_provinces,
+}
+
+TOOLS_DESCRIPTION = """
+You are an expert data analyst assistant for the Vietnam 2024 National High School Exam (English subject) dataset.
+You help users explore score data and socioeconomic indicators across Vietnam's 63 provinces.
+
+Dataset context:
+- English exam scores (0-10 scale) for all students who sat the 2024 national exam
+- Socioeconomic data per province: computer_pct (household computer access %), poverty_pct (multidimensional poverty rate %), avg_income (average monthly income in VND thousands)
+- Regions: North, Central, South
+
+Available tools:
+- get_top_provinces(n): Top N provinces by average English score. Default n=5.
+- get_bottom_provinces(n): Bottom N provinces by average English score. Default n=5.
+- correlate(var1, var2): Pearson correlation between two variables. Valid vars: avg_score, computer_pct, poverty_pct, avg_income.
+- get_region_summary(): Average scores and student counts for North, Central, South regions.
+- get_outliers(): Provinces with above-median income but below-median English scores.
+- get_province_detail(province_name): All stats for a specific province. Use partial Vietnamese names.
+- get_national_summary(): Key national KPIs - total students, mean, median, pass rate, top/bottom provinces.
+- compare_provinces(province1, province2): Side-by-side comparison of two provinces.
+
+Instructions:
+1. Analyse the user question carefully.
+2. Decide which tool(s) to call. You may call multiple tools if needed.
+3. Respond ONLY with valid JSON - no preamble, no markdown fences, no extra text.
+4. Format: {"tools": [{"tool": "tool_name", "args": {"arg1": value}}, ...]}
+5. If no tool is needed: {"tools": [], "direct_answer": "your answer here"}
+"""
+
+INTERPRETATION_PROMPT = """
+You are a data analyst presenting findings about Vietnam's 2024 English exam scores to a policy audience.
+
+The user asked: {question}
+
+You called these tools and got these results:
+{tool_results}
+
+Now write a clear, insightful response of 3-5 sentences.
+- Lead with the direct answer to the question
+- Add context about what drives the pattern (socioeconomic, regional, or structural factors)
+- End with a policy-relevant implication or observation
+- Use specific numbers from the results
+- Write in plain English, no bullet points, no markdown headers
+"""
+
+
+def run_agent(user_question, api_key, model_id="gemini-2.5-flash"):
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_id)
+
+    # Step 1: decide which tools to call
+    tool_response = model.generate_content(
+        TOOLS_DESCRIPTION + f"\n\nUser question: {user_question}"
+    )
+    raw = tool_response.text.strip().replace("```json", "").replace("```", "").strip()
+
+    try:
+        decision = json.loads(raw)
+    except json.JSONDecodeError:
+        return "Could not parse tool decision. Try rephrasing your question."
+
+    if not decision.get("tools") and decision.get("direct_answer"):
+        return decision["direct_answer"]
+
+    # Step 2: execute tools
+    tool_results = []
+    for call in decision.get("tools", []):
+        tool_name = call.get("tool")
+        args = call.get("args", {})
+        func = TOOLS_MAP.get(tool_name)
+        if func:
+            try:
+                result = func(**args)
+                tool_results.append(f"[{tool_name}]:\n{result}")
+            except Exception as e:
+                tool_results.append(f"[{tool_name}]: Error - {str(e)}")
+        else:
+            tool_results.append(f"[{tool_name}]: Tool not found.")
+
+    if not tool_results:
+        return "No tools were executed. Try asking a more specific question."
+
+    # Step 3: interpret results
+    interp_prompt = INTERPRETATION_PROMPT.format(
+        question=user_question,
+        tool_results="\n\n".join(tool_results)
+    )
+    final = model.generate_content(interp_prompt)
+    return final.text
+
+
+with tab_agent:
+    st.subheader("🤖 Vietnam Score AI Agent")
+    st.caption(
+        "Ask questions in plain English. The agent analyses the dataset using pre-built tools "
+        "and interprets results using Gemini AI."
+    )
+
+    with st.expander("⚙️ How this agent works"):
+        st.markdown("""
+        This is a **tool-calling AI agent** built on top of the existing dataset:
+
+        1. **You ask** a natural language question
+        2. **Gemini** reads the question and decides which analysis tool(s) to run
+        3. **Python functions** execute the actual data analysis (pandas under the hood)
+        4. **Gemini** interprets the results and gives a plain-English answer with insight
+
+        The LLM never touches raw data directly — it only sees pre-computed summaries,
+        keeping responses fast, accurate, and grounded in actual numbers.
+
+        **Available tools:** top/bottom provinces · regional summary · correlations ·
+        outlier detection · province deep-dive · province comparison · national KPIs
+        """)
+
+    with st.expander("💡 Example questions to try"):
+        examples = [
+            "Which region has the weakest English scores?",
+            "Is poverty or computer access a stronger predictor of scores?",
+            "Which provinces are wealthy but scoring low?",
+            "Compare Ha Noi and Ho Chi Minh",
+            "Tell me about Quang Nam's performance",
+            "What are the key national statistics?",
+            "Which 10 provinces score the lowest?",
+            "What is the correlation between income and English scores?",
+        ]
+        for q in examples:
+            if st.button(q, key=f"ex_{q}"):
+                st.session_state["agent_prefill"] = q
+
+    api_key = st.text_input(
+        "Gemini API Key",
+        type="password",
+        placeholder="Paste your free Gemini API key here (get one at aistudio.google.com)",
+        help="Your key is used only for this session and never stored."
+    )
+
+    MODELS = {
+        "Gemini 2.5 Flash (Recommended)": "gemini-2.5-flash",
+        "Gemini 2.5 Flash Lite": "gemini-2.5-flash-lite",
+        "Gemma 3 27B": "gemma-3-27b-it",
+    }
+
+    selected_model_label = st.selectbox(
+        "Model",
+        options=list(MODELS.keys()),
+        index=0,
+        help="All three are free tier. Gemini 2.5 Flash gives the best answers. Gemma 3 is open-weight."
+    )
+    selected_model_id = MODELS[selected_model_label]
+
+    if not GEMINI_AVAILABLE:
+        st.warning("google-generativeai not installed. Run: pip install google-generativeai")
+
+    st.divider()
+
+    if "agent_messages" not in st.session_state:
+        st.session_state["agent_messages"] = []
+
+    for msg in st.session_state["agent_messages"]:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    prefill = st.session_state.pop("agent_prefill", "")
+
+    if prompt := st.chat_input("Ask about Vietnam's English exam scores...", key="agent_input"):
+        user_q = prompt
+    elif prefill:
+        user_q = prefill
+    else:
+        user_q = None
+
+    if user_q:
+        st.session_state["agent_messages"].append({"role": "user", "content": user_q})
+        with st.chat_message("user"):
+            st.write(user_q)
+
+        with st.chat_message("assistant"):
+            if not api_key:
+                response = "Please enter your Gemini API key above to use the agent."
+            elif not GEMINI_AVAILABLE:
+                response = "Please install google-generativeai first: pip install google-generativeai"
+            else:
+                with st.spinner("Analysing data..."):
+                    try:
+                        response = run_agent(user_q, api_key, selected_model_id)
+                    except Exception as e:
+                        response = f"Error: {str(e)}"
+            st.write(response)
+
+        st.session_state["agent_messages"].append({"role": "assistant", "content": response})
+
+    if st.session_state["agent_messages"]:
+        if st.button("Clear chat", key="clear_agent"):
+            st.session_state["agent_messages"] = []
+            st.rerun()
+
+    # Auto-scroll to bottom after each new message
+    st.components.v1.html("""
+        <script>
+            window.parent.document.querySelectorAll('section.main')[0].scrollTo({
+                top: window.parent.document.querySelectorAll('section.main')[0].scrollHeight,
+                behavior: 'smooth'
+            });
+        </script>
+    """, height=0)
