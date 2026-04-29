@@ -4,7 +4,7 @@
 
 ## Overview
 
-This project explores how socioeconomic conditions affect English language performance across Vietnam's 63 provinces, using data from the 2024 national university entrance exam (THPT). Exam score data is merged with provincial statistics on average income, household computer access, and poverty rate to uncover structural disparities in English education nationwide.
+This project explores how socioeconomic conditions affect English language performance across Vietnam's 63 provinces, using data from the 2024 National university entrance exam (THPT Quốc Gia). Exam score data is merged with provincial statistics on average income, household computer access, and poverty rate to uncover structural disparities in English education nationwide.
 
 The project has two layers:
 
