@@ -1029,12 +1029,16 @@ with tab_agent:
             if st.button(q, key=f"ex_{q}"):
                 st.session_state["agent_prefill"] = q
 
-    api_key = st.text_input(
-        "Gemini API Key",
-        type="password",
-        placeholder="Paste your free Gemini API key here (get one at aistudio.google.com)",
-        help="Your key is used only for this session and never stored."
-    )
+    # Load API key from Streamlit secrets (deployed) or fall back to local input
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        api_key = st.text_input(
+            "Gemini API Key",
+            type="password",
+            placeholder="Paste your Gemini API key (get one free at aistudio.google.com)",
+            help="Only needed when running locally. The deployed app handles this automatically."
+        )
 
     MODELS = {
         "Gemini 2.5 Flash (Recommended)": "gemini-2.5-flash",
@@ -1078,7 +1082,7 @@ with tab_agent:
 
         with st.chat_message("assistant"):
             if not api_key:
-                response = "Please enter your Gemini API key above to use the agent."
+                response = "API key not configured. If you're running locally, paste your Gemini key in the field above."
             elif not GEMINI_AVAILABLE:
                 response = "Please install google-generativeai first: pip install google-generativeai"
             else:
